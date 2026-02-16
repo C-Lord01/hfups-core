@@ -12,8 +12,13 @@ authors = [
   { name = "HFUPS Team" }
 ]
 
+[project.optional-dependencies]
+serial = ["pyserial>=3.5"]
+
 [project.scripts]
 hfups-demo = "hfups.cli_demo:main"
+hfups-rx = "hfups.cli_rx:main"
+hfups-tx = "hfups.cli_tx:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hfups"]
