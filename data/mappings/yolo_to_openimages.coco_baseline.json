@@ -1,0 +1,22 @@
+{
+  "person": "/m/01g317",
+  "car": "/m/0199g",
+  "truck": "/m/0199g",
+  "bus": "/m/01bjv",
+  "bicycle": "/m/0k4j",
+  "motorcycle": "/m/0k4j",
+  "boat": "/m/0199g",
+  "dog": "/m/015qff",
+  "cat": "/m/015qff",
+  "bird": "/m/015qff",
+  "horse": "/m/015qff",
+  "sheep": "/m/015qff",
+  "cow": "/m/015qff",
+  "elephant": "/m/015qff",
+  "bear": "/m/015qff",
+  "zebra": "/m/015qff",
+  "giraffe": "/m/015qff",
+  "traffic light": "/m/0199g",
+  "stop sign": "/m/0199g",
+  "fire hydrant": "/m/0199g"
+}

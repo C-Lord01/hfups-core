@@ -1,0 +1,37 @@
+{
+  "schema": "hfups.dict.openimages.boxable.v1",
+  "source": {
+    "dataset": "openimages",
+    "version": "v7",
+    "subset": "boxable",
+    "input_file": "data/openimages/class-descriptions-boxable.csv"
+  },
+  "created_utc": "2026-02-26T04:45:38Z",
+  "classes": [
+    {
+      "id": 0,
+      "label": "/m/01g317",
+      "name": "Person"
+    },
+    {
+      "id": 1,
+      "label": "/m/0199g",
+      "name": "Car"
+    },
+    {
+      "id": 2,
+      "label": "/m/015qff",
+      "name": "Dog"
+    },
+    {
+      "id": 3,
+      "label": "/m/0k4j",
+      "name": "Bicycle"
+    },
+    {
+      "id": 4,
+      "label": "/m/01bjv",
+      "name": "Bus"
+    }
+  ]
+}
