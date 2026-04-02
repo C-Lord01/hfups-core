@@ -1,5 +1,13 @@
 """Build render-friendly scene specs and Nova prompt text from HFUPS state."""
 
+import warnings
+warnings.warn(
+    "hfups.prompt_builder is deprecated and will be removed in a future release. "
+    "Use hfups.nova.prompt_templates.build_nova_prompt instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 CAM_MOVE_LABELS = {
     0: "static",
     1: "slow pan",

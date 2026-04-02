@@ -18,5 +18,8 @@ def test_cli_demo_writes_utf8_json_file(tmp_path) -> None:
         data = json.load(f)
 
     assert isinstance(data, dict)
-    assert "scene_spec" in data
-    assert "nova_prompt" in data
+    assert "encoded_bytes" in data
+    assert "prompt" in data
+    assert "object_count" in data
+    assert "template" in data
+    assert "airtime_10kbps_seconds" in data

@@ -9,16 +9,18 @@ description = "HFUPS protocol core"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
-  { name = "HFUPS Team" }
+  { name = "Chris Kulpa" }
 ]
 
 [project.optional-dependencies]
 serial = ["pyserial>=3.5"]
+nova = ["boto3>=1.34"]
 
 [project.scripts]
 hfups-demo = "hfups.cli_demo:main"
 hfups-rx = "hfups.cli_rx:main"
 hfups-tx = "hfups.cli_tx:main"
+hfups-demo-run = "hfups.demo.run:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hfups"]

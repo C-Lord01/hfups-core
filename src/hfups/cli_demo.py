@@ -4,60 +4,48 @@ import argparse
 import json
 import os
 
-from hfups.framing import decode_frame, encode_frame
-from hfups.link_sim import LinkSimConfig, simulate_link
-from hfups.prompt_builder import build_nova_prompt, build_scene_spec
-from hfups.state import HFUPSState, apply_payload, state_to_dict
-from hfups.streaming import FrameStreamDecoder
+from hfups.nova.prompt_templates import build_nova_prompt
+from hfups.vision.keyframe_packet import KeyframeObject, KeyframePacket, estimate_airtime_seconds
+from hfups.vision.openimages_dict import default_openimages_v7_dict_path, load_openimages_v7_boxable_dict
 
 
-def run_demo_sim(cfg: LinkSimConfig) -> dict:
-    """Run deterministic demo flow through an impaired simulated link."""
-    iframe_payload = bytes.fromhex("0000400081")
-    mf_payload = bytes.fromhex("C0A824")
-    clip_payload = bytes.fromhex("C191")
+def run_demo_sim() -> dict:
+    """Run a deterministic demo using the KeyframePacket pipeline."""
+    # Build a deterministic 3-object packet using class_ids 0 (Person), 1 (Car), 2 (Dog)
+    objects = [
+        KeyframeObject(class_id=0, track_id=0, cx=3, cy=4, size=2, confidence=12),
+        KeyframeObject(class_id=1, track_id=1, cx=6, cy=2, size=1, confidence=10),
+        KeyframeObject(class_id=2, track_id=2, cx=1, cy=6, size=0, confidence=8),
+    ]
+    packet = KeyframePacket(objects=objects)
 
-    frames = [encode_frame(iframe_payload), encode_frame(mf_payload), encode_frame(clip_payload)]
-    stream = b"".join(frames)
-    chunks = simulate_link(stream, cfg)
+    # Roundtrip encode/decode
+    encoded = packet.encode()
+    KeyframePacket.decode(encoded)
 
-    decoder = FrameStreamDecoder()
-    state = HFUPSState()
-    rejected_frames = 0
-    frames_received = 0
+    # Load dictionary and build prompt
+    dict_path = default_openimages_v7_dict_path()
+    openimages_dict = load_openimages_v7_boxable_dict(dict_path)
+    prompt = build_nova_prompt(packet, openimages_dict, template="disaster_response")
 
-    for chunk in chunks:
-        out_frames = decoder.feed(chunk)
-        frames_received += len(out_frames)
-        for frame in out_frames:
-            try:
-                payload = decode_frame(frame)
-                apply_payload(state, payload)
-            except ValueError:
-                rejected_frames += 1
+    airtime = estimate_airtime_seconds(len(encoded), kbps=10.0)
 
-    result = state_to_dict(state)
-    result["bytes_tx"] = len(stream)
-    result["bytes_rx"] = sum(len(c) for c in chunks)
-    result["frames_sent"] = len(frames)
-    result["frames_received"] = frames_received
-    result["rejected_frames"] = rejected_frames
-    result["scene_spec"] = build_scene_spec(result)
-    result["nova_prompt"] = build_nova_prompt(result["scene_spec"])
-    return result
+    return {
+        "encoded_bytes": len(encoded),
+        "airtime_10kbps_seconds": airtime,
+        "prompt": prompt,
+        "object_count": len(objects),
+        "template": "disaster_response",
+    }
 
 
 def run_demo() -> dict:
-    """Run a deterministic end-to-end demo with no link impairment."""
-    return run_demo_sim(LinkSimConfig())
+    """Run a deterministic end-to-end demo."""
+    return run_demo_sim()
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="HFUPS end-to-end demo")
-    parser.add_argument("--drop-rate", type=float, default=0.0, help="Chunk drop probability")
-    parser.add_argument("--flip-rate", type=float, default=0.0, help="Bit-flip probability per chunk")
-    parser.add_argument("--max-chunk", type=int, default=64, help="Maximum chunk size")
-    parser.add_argument("--seed", type=int, default=12345, help="Deterministic RNG seed")
     parser.add_argument("--out", help="Optional output JSON file path (UTF-8)")
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON with indentation")
     return parser
@@ -84,14 +72,8 @@ def _write_json_atomic(path: str, result: dict, *, pretty: bool) -> None:
 def main(argv: list[str] | None = None) -> None:
     """Print demo result as JSON and optionally write to a UTF-8 file."""
     args = _build_parser().parse_args(argv)
-    cfg = LinkSimConfig(
-        drop_rate=args.drop_rate,
-        flip_rate=args.flip_rate,
-        max_chunk=args.max_chunk,
-        seed=args.seed,
-    )
 
-    result = run_demo_sim(cfg)
+    result = run_demo_sim()
 
     if args.out:
         _write_json_atomic(args.out, result, pretty=args.pretty)
