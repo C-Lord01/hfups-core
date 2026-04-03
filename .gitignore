@@ -6,3 +6,6 @@ dist/
 *.egg-info/
 .env
 outputs/
+
+# Model weights
+models/*.pt
