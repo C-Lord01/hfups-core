@@ -149,6 +149,7 @@ def _disaster_response_template(
     openimages_dict: OpenImagesDict,
     caption: str | None,
     deltas: list[tuple] | None,
+    caption_parsed: dict | None = None,
 ) -> str:
     items = _objects_for_prompt(packet, openimages_dict)
     hazard_items = [item for item in items if bool(item["hazard"])]
@@ -156,8 +157,6 @@ def _disaster_response_template(
     vehicle_items = [item for item in items if bool(item["vehicle"])]
 
     opener = "URGENT: possible incident requiring rapid situational awareness."
-    if caption:
-        opener = f"URGENT: {caption.strip().rstrip('.')}."
 
     facts: list[str] = []
     if hazard_items:
@@ -182,6 +181,19 @@ def _disaster_response_template(
     motion = _motion_sentence(packet, openimages_dict, deltas)
     if motion:
         facts.append(motion)
+
+    if caption is not None:
+        facts.append(f"Scene: {caption.strip().rstrip('.')}.")
+    if caption_parsed:
+        hazards = caption_parsed.get("hazards") or []
+        environment = caption_parsed.get("environment")
+        actions = caption_parsed.get("actions") or []
+        if hazards:
+            facts.append(f"Hazards present: {', '.join(hazards)}.")
+        if environment:
+            facts.append(f"Environment: {environment}.")
+        if actions:
+            facts.append(f"Subjects: {', '.join(actions)}.")
 
     return _clip_words(" ".join([opener, *facts]), max_words=200)
 
@@ -219,6 +231,7 @@ def build_nova_prompt(
     caption: str | None = None,
     deltas: list[tuple] | None = None,
     template: TemplateStyle = "descriptive",
+    caption_parsed: dict | None = None,
 ) -> str:
     """
     Build a deterministic Nova Canvas-ready prompt from semantic packet content.
@@ -228,7 +241,7 @@ def build_nova_prompt(
     if template == "descriptive":
         return _descriptive_template(packet, openimages_dict, caption, deltas)
     if template == "disaster_response":
-        return _disaster_response_template(packet, openimages_dict, caption, deltas)
+        return _disaster_response_template(packet, openimages_dict, caption, deltas, caption_parsed)
     if template == "cinematic":
         return _cinematic_template(packet, openimages_dict, caption, deltas)
     raise ValueError(

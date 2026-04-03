@@ -6,7 +6,7 @@
     "subset": "boxable",
     "input_file": "data/openimages/class-descriptions-boxable.csv"
   },
-  "created_utc": "2026-02-26T04:45:38Z",
+  "created_utc": "2026-04-02T04:10:38Z",
   "classes": [
     {
       "id": 0,
@@ -20,18 +20,138 @@
     },
     {
       "id": 2,
-      "label": "/m/015qff",
-      "name": "Dog"
+      "label": "/m/07r04",
+      "name": "Truck"
     },
     {
       "id": 3,
+      "label": "/m/01bjv",
+      "name": "Bus"
+    },
+    {
+      "id": 4,
+      "label": "/m/04_sv",
+      "name": "Motorcycle"
+    },
+    {
+      "id": 5,
       "label": "/m/0k4j",
       "name": "Bicycle"
     },
     {
-      "id": 4,
-      "label": "/m/01bjv",
-      "name": "Bus"
+      "id": 6,
+      "label": "/m/019jd",
+      "name": "Boat"
+    },
+    {
+      "id": 7,
+      "label": "/m/0cmf2",
+      "name": "Airplane"
+    },
+    {
+      "id": 8,
+      "label": "/m/07jdr",
+      "name": "Train"
+    },
+    {
+      "id": 9,
+      "label": "/m/01mqdt",
+      "name": "Traffic light"
+    },
+    {
+      "id": 10,
+      "label": "/m/01pns0",
+      "name": "Fire hydrant"
+    },
+    {
+      "id": 11,
+      "label": "/m/02pv19",
+      "name": "Stop sign"
+    },
+    {
+      "id": 12,
+      "label": "/m/0cvnqh",
+      "name": "Bench"
+    },
+    {
+      "id": 13,
+      "label": "/m/01940j",
+      "name": "Backpack"
+    },
+    {
+      "id": 14,
+      "label": "/m/0hnnb",
+      "name": "Umbrella"
+    },
+    {
+      "id": 15,
+      "label": "/m/080hkjn",
+      "name": "Handbag"
+    },
+    {
+      "id": 16,
+      "label": "/m/01s55n",
+      "name": "Suitcase"
+    },
+    {
+      "id": 17,
+      "label": "/m/04dr76w",
+      "name": "Bottle"
+    },
+    {
+      "id": 18,
+      "label": "/m/01mzpv",
+      "name": "Chair"
+    },
+    {
+      "id": 19,
+      "label": "/m/02crq1",
+      "name": "Couch"
+    },
+    {
+      "id": 20,
+      "label": "/m/03ssj5",
+      "name": "Bed"
+    },
+    {
+      "id": 21,
+      "label": "/m/09g_k",
+      "name": "Toilet"
+    },
+    {
+      "id": 22,
+      "label": "/m/07c52",
+      "name": "Television"
+    },
+    {
+      "id": 23,
+      "label": "/m/01c648",
+      "name": "Laptop"
+    },
+    {
+      "id": 24,
+      "label": "/m/050k8",
+      "name": "Mobile phone"
+    },
+    {
+      "id": 25,
+      "label": "/m/015qff",
+      "name": "Dog"
+    },
+    {
+      "id": 26,
+      "label": "/m/01yrx",
+      "name": "Cat"
+    },
+    {
+      "id": 27,
+      "label": "/m/03k3r",
+      "name": "Horse"
+    },
+    {
+      "id": 28,
+      "label": "/m/015p6",
+      "name": "Bird"
     }
   ]
 }

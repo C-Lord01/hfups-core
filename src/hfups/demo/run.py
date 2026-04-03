@@ -32,6 +32,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", default="outputs", help="Output folder path (default: outputs)")
     parser.add_argument("--profile", default=None, help="AWS CLI profile name")
     parser.add_argument("--conf", type=float, default=0.15, help="YOLO confidence threshold (default: 0.15)")
+    parser.add_argument(
+        "--backend",
+        choices=["huggingface", "bedrock"],
+        default="huggingface",
+        help="Image generation backend (default: huggingface)",
+    )
+    parser.add_argument(
+        "--no-caption",
+        dest="caption",
+        action="store_false",
+        default=True,
+        help="Disable BLIP scene captioning (captioning is on by default)",
+    )
     return parser
 
 
@@ -47,7 +60,7 @@ def main(argv: list[str] | None = None) -> None:
     image_size_kb = image_path.stat().st_size / 1024.0
 
     # Step b: YOLO detection
-    runner = YoloRunner("models/yolov8n.pt")
+    runner = YoloRunner("models/yolov8m.pt")
     detections = runner.detect(image_path, conf=args.conf)
 
     # Step c: Build KeyframePacket
@@ -74,39 +87,60 @@ def main(argv: list[str] | None = None) -> None:
     # Step e: VARA text bridge
     vara_out = encode_stream_to_text(encoded)
 
-    # Step f: Build Nova prompt
-    prompt = build_nova_prompt(packet, openimages_dict, template=args.template)
+    # Step f: Optionally run BLIP captioning
+    caption_str: str | None = None
+    caption_parsed: dict | None = None
+    if args.caption:
+        from hfups.vision.scene_captioner import SceneCaptioner
+        from hfups.vision.caption_parser import parse_caption
+        caption_str = SceneCaptioner().caption(str(image_path))
+        caption_parsed = parse_caption(caption_str)
 
-    # Step g: Print summary
+    # Step g: Build Nova prompt
+    prompt = build_nova_prompt(
+        packet,
+        openimages_dict,
+        caption=caption_str,
+        caption_parsed=caption_parsed,
+        template=args.template,
+    )
+
+    # Step h: Print summary
     print(f"Input image: {args.image} ({image_size_kb:.1f} KB)")
     print(f"Objects detected: {len(packet.objects)}")
     print(f"Encoded packet size: {encoded_bytes} bytes")
     print(f"Estimated airtime at 10kbps: {airtime_ms:.1f} ms")
+    if caption_str is not None:
+        print(f"BLIP caption: {caption_str}")
     print(f"Prompt:\n{prompt}")
 
-    # Step h/i: Nova invocation or clean exit
+    # Step i/j: Nova invocation or clean exit
     if not args.nova:
         sys.exit(0)
 
-    # Check boto3
-    try:
-        import boto3  # noqa: F401
-    except ImportError:
-        print(
-            "ERROR: boto3 is not installed. Install it with: pip install boto3>=1.34",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    if args.backend == "huggingface":
+        from hfups.nova.hf_client import invoke_image_generation
+        image_bytes = invoke_image_generation(prompt, width=1024, height=1024)
+    else:
+        # Check boto3
+        try:
+            import boto3  # noqa: F401
+        except ImportError:
+            print(
+                "ERROR: boto3 is not installed. Install it with: pip install boto3>=1.34",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    try:
-        image_bytes = invoke_nova_canvas(
-            prompt,
-            region="us-east-1",
-            profile=args.profile,
-        )
-    except RuntimeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
+        try:
+            image_bytes = invoke_nova_canvas(
+                prompt,
+                region="us-east-1",
+                profile=args.profile,
+            )
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
 
     # Save outputs
     out_dir = Path(args.out)
@@ -130,6 +164,8 @@ def main(argv: list[str] | None = None) -> None:
         "template": args.template,
         "prompt": prompt,
     }
+    summary["caption"] = caption_str
+    summary["caption_parsed"] = caption_parsed
     summary_path = out_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 

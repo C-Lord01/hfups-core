@@ -80,7 +80,7 @@ def test_demo_run_no_nova_exits_clean(tmp_path) -> None:
         patch("hfups.demo.run.ClassMapper"),
     ):
         with pytest.raises(SystemExit) as exc_info:
-            demo_run.main(["--image", str(image_path)])
+            demo_run.main(["--image", str(image_path), "--no-caption"])
         assert exc_info.value.code == 0
 
 
@@ -113,6 +113,8 @@ def test_demo_run_nova_saves_files(tmp_path) -> None:
         demo_run.main([
             "--image", str(image_path),
             "--nova",
+            "--backend", "bedrock",
+            "--no-caption",
             "--out", str(out_dir),
         ])
 
