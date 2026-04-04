@@ -129,7 +129,7 @@ class KeyframeBuilder:
                 if not chosen:
                     chosen.append(candidate)
                     continue
-                if len(chosen) >= 2:
+                if len(chosen) >= 4:
                     break
                 if all(_iou(candidate.detection, existing.detection) < 0.2 for existing in chosen):
                     chosen.append(candidate)

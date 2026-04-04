@@ -25,13 +25,25 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--nova", action="store_true", help="Invoke Nova Canvas to generate image")
     parser.add_argument(
         "--template",
-        choices=["concise", "descriptive", "disaster_response", "cinematic"],
-        default="disaster_response",
-        help="Prompt template style (default: disaster_response)",
+        choices=["concise", "descriptive", "disaster_response", "cinematic", "ups"],
+        default="ups",
+        help="Prompt template style (default: ups)",
+    )
+    parser.add_argument(
+        "--hf-model",
+        default="black-forest-labs/FLUX.1-schnell",
+        help="HuggingFace model ID for image generation (default: black-forest-labs/FLUX.1-schnell)",
     )
     parser.add_argument("--out", default="outputs", help="Output folder path (default: outputs)")
     parser.add_argument("--profile", default=None, help="AWS CLI profile name")
-    parser.add_argument("--conf", type=float, default=0.15, help="YOLO confidence threshold (default: 0.15)")
+    parser.add_argument(
+        "--conf",
+        type=float,
+        default=0.10,
+        # YOLOv8n nano at 0.15 misses partially occluded objects, a common condition
+        # in disaster scenes (debris, smoke, crowd occlusion). 0.10 recovers these.
+        help="YOLO confidence threshold (default: 0.10)",
+    )
     parser.add_argument(
         "--backend",
         choices=["huggingface", "bedrock"],
@@ -39,11 +51,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Image generation backend (default: huggingface)",
     )
     parser.add_argument(
-        "--no-caption",
-        dest="caption",
-        action="store_false",
-        default=True,
-        help="Disable BLIP scene captioning (captioning is on by default)",
+        "--caption",
+        default=None,
+        help="Optional scene description to include in the prompt (e.g. 'flooded street with debris'). "
+             "If omitted, the prompt is built from detected objects only.",
     )
     return parser
 
@@ -60,14 +71,14 @@ def main(argv: list[str] | None = None) -> None:
     image_size_kb = image_path.stat().st_size / 1024.0
 
     # Step b: YOLO detection
-    runner = YoloRunner("models/yolov8m.pt")
+    runner = YoloRunner("models/yolov8n.pt")
     detections = runner.detect(image_path, conf=args.conf)
 
     # Step c: Build KeyframePacket
     dict_path = default_openimages_v7_dict_path()
     openimages_dict = load_openimages_v7_boxable_dict(dict_path)
     class_mapper = ClassMapper(openimages_dict)
-    builder = KeyframeBuilder(class_mapper=class_mapper, confidence_threshold=args.conf)
+    builder = KeyframeBuilder(class_mapper=class_mapper, max_objects=12, confidence_threshold=args.conf)
 
     # Attempt to read real image dimensions
     try:
@@ -87,21 +98,14 @@ def main(argv: list[str] | None = None) -> None:
     # Step e: VARA text bridge
     vara_out = encode_stream_to_text(encoded)
 
-    # Step f: Optionally run BLIP captioning
-    caption_str: str | None = None
-    caption_parsed: dict | None = None
-    if args.caption:
-        from hfups.vision.scene_captioner import SceneCaptioner
-        from hfups.vision.caption_parser import parse_caption
-        caption_str = SceneCaptioner().caption(str(image_path))
-        caption_parsed = parse_caption(caption_str)
+    # Step f: Use operator-supplied caption if provided (no auto-captioning)
+    caption_str: str | None = args.caption or None
 
     # Step g: Build Nova prompt
     prompt = build_nova_prompt(
         packet,
         openimages_dict,
         caption=caption_str,
-        caption_parsed=caption_parsed,
         template=args.template,
     )
 
@@ -111,7 +115,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Encoded packet size: {encoded_bytes} bytes")
     print(f"Estimated airtime at 10kbps: {airtime_ms:.1f} ms")
     if caption_str is not None:
-        print(f"BLIP caption: {caption_str}")
+        print(f"Caption: {caption_str}")
     print(f"Prompt:\n{prompt}")
 
     # Step i/j: Nova invocation or clean exit
@@ -119,8 +123,8 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(0)
 
     if args.backend == "huggingface":
-        from hfups.nova.hf_client import invoke_image_generation
-        image_bytes = invoke_image_generation(prompt, width=1024, height=1024)
+        from hfups.nova.hf_client import invoke_hf_image
+        image_bytes = invoke_hf_image(prompt, model=args.hf_model, width=1024, height=1024)
     else:
         # Check boto3
         try:
@@ -165,7 +169,6 @@ def main(argv: list[str] | None = None) -> None:
         "prompt": prompt,
     }
     summary["caption"] = caption_str
-    summary["caption_parsed"] = caption_parsed
     summary_path = out_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 

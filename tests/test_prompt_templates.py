@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 from hfups.nova.prompt_templates import build_nova_prompt
@@ -88,7 +90,9 @@ def test_prompt_templates_cover_required_phrases_for_canonical_inputs(
 
     concise = build_nova_prompt(packet, dictionary, template="concise")
     descriptive = build_nova_prompt(packet, dictionary, template="descriptive")
-    disaster = build_nova_prompt(packet, dictionary, template="disaster_response")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        disaster = build_nova_prompt(packet, dictionary, template="disaster_response")
     cinematic = build_nova_prompt(packet, dictionary, template="cinematic")
 
     assert concise.count(".") <= 1
@@ -118,3 +122,63 @@ def test_concise_template_exact_with_explicit_caption() -> None:
     )
 
     assert concise == "Overturned sedan lower-left; red pickup middle-left; 1 person nearby; smoke visible."
+
+
+# --- UPS template tests ---
+
+def test_ups_template_no_grid_coords_no_confidence_no_urgent() -> None:
+    dictionary = _dict_for_templates()
+    # traffic + fire scene
+    packet = _packet([(0, 1, 6, 2, 14), (5, 3, 5, 2, 13), (2, 2, 6, 1, 11)])
+
+    result = build_nova_prompt(packet, dictionary, template="ups")
+
+    assert "grid" not in result.lower(), "UPS prompt must not contain grid coordinates"
+    assert "%" not in result, "UPS prompt must not contain confidence percentages"
+    assert "URGENT" not in result, "UPS prompt must not contain URGENT prefix"
+
+
+def test_ups_template_contains_layer_a_realism_language() -> None:
+    dictionary = _dict_for_templates()
+    packet = _packet([(0, 3, 4, 2, 12)])
+
+    result = build_nova_prompt(packet, dictionary, template="ups")
+
+    assert "Ultra-realistic" in result
+    assert "photojournalism" in result
+    assert "no CGI" in result
+
+
+def test_ups_template_within_word_limit() -> None:
+    dictionary = _dict_for_templates()
+    # max 12 objects to stress token limit
+    packet = _packet([
+        (0, 1, 6, 2, 14), (1, 2, 5, 2, 13), (2, 3, 4, 1, 12),
+        (3, 4, 3, 1, 11), (4, 5, 2, 1, 10), (5, 6, 1, 1, 9),
+    ])
+
+    result = build_nova_prompt(packet, dictionary, template="ups")
+
+    assert len(result.split()) <= 200
+
+
+def test_disaster_response_backward_compat_still_works() -> None:
+    dictionary = _dict_for_templates()
+    packet = _packet([(0, 1, 6, 2, 14), (5, 3, 5, 2, 13)])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        result = build_nova_prompt(packet, dictionary, template="disaster_response")
+
+    assert isinstance(result, str)
+    assert len(result) > 0
+    # The "possible" keyword must still appear (backward-compat content check)
+    assert "possible" in result.lower()
+
+
+def test_disaster_response_emits_deprecation_warning() -> None:
+    dictionary = _dict_for_templates()
+    packet = _packet([(0, 1, 6, 2, 14)])
+
+    with pytest.warns(DeprecationWarning, match="disaster_response"):
+        build_nova_prompt(packet, dictionary, template="disaster_response")

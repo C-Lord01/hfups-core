@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import io
 import json
 import struct
 import zlib
@@ -19,7 +17,6 @@ from hfups.vision.yolo_adapter import Detection
 
 def _make_minimal_png() -> bytes:
     """Return a valid 1x1 white PNG as bytes."""
-    # PNG signature
     sig = b"\x89PNG\r\n\x1a\n"
 
     def chunk(ctype: bytes, data: bytes) -> bytes:
@@ -28,7 +25,6 @@ def _make_minimal_png() -> bytes:
         return c + struct.pack(">I", crc)
 
     ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
-    # 1x1 white RGB pixel
     raw = b"\x00\xff\xff\xff"
     idat = chunk(b"IDAT", zlib.compress(raw))
     iend = chunk(b"IEND", b"")
@@ -59,7 +55,6 @@ def test_demo_run_missing_image_exits_1(tmp_path) -> None:
 
 def test_demo_run_no_nova_exits_clean(tmp_path) -> None:
     """With valid image and no --nova, should exit cleanly with code 0."""
-    # Create a dummy image file
     image_path = tmp_path / "some_image.jpg"
     image_path.write_bytes(_make_minimal_png())
 
@@ -80,7 +75,7 @@ def test_demo_run_no_nova_exits_clean(tmp_path) -> None:
         patch("hfups.demo.run.ClassMapper"),
     ):
         with pytest.raises(SystemExit) as exc_info:
-            demo_run.main(["--image", str(image_path), "--no-caption"])
+            demo_run.main(["--image", str(image_path)])
         assert exc_info.value.code == 0
 
 
@@ -107,14 +102,12 @@ def test_demo_run_nova_saves_files(tmp_path) -> None:
         patch("hfups.demo.run.build_nova_prompt", return_value="test prompt"),
         patch("hfups.demo.run.ClassMapper"),
         patch("hfups.demo.run.invoke_nova_canvas", return_value=png_bytes),
-        # boto3 available
         patch.dict("sys.modules", {"boto3": MagicMock()}),
     ):
         demo_run.main([
             "--image", str(image_path),
             "--nova",
             "--backend", "bedrock",
-            "--no-caption",
             "--out", str(out_dir),
         ])
 
@@ -126,3 +119,69 @@ def test_demo_run_nova_saves_files(tmp_path) -> None:
     assert "object_count" in summary
     assert "encoded_bytes" in summary
     assert "prompt" in summary
+
+
+def test_demo_run_default_template_is_ups(tmp_path) -> None:
+    """Default --template must be 'ups' when not specified."""
+    image_path = tmp_path / "img.jpg"
+    image_path.write_bytes(_make_minimal_png())
+
+    sample_packet = _make_sample_packet()
+    captured: dict = {}
+
+    def _capture_prompt(*args, **kwargs):
+        captured["template"] = kwargs.get("template", args[4] if len(args) > 4 else None)
+        return "captured prompt"
+
+    mock_runner = MagicMock()
+    mock_runner.detect.return_value = _sample_detections()
+    mock_builder = MagicMock()
+    mock_builder.build.return_value = sample_packet
+
+    with (
+        patch("hfups.demo.run.YoloRunner", return_value=mock_runner),
+        patch("hfups.demo.run.KeyframeBuilder", return_value=mock_builder),
+        patch("hfups.demo.run.load_openimages_v7_boxable_dict"),
+        patch("hfups.demo.run.default_openimages_v7_dict_path"),
+        patch("hfups.demo.run.build_nova_prompt", side_effect=_capture_prompt),
+        patch("hfups.demo.run.ClassMapper"),
+    ):
+        with pytest.raises(SystemExit):
+            demo_run.main(["--image", str(image_path)])
+
+    assert captured.get("template") == "ups"
+
+
+def test_demo_run_huggingface_backend_routes_to_hf_client(tmp_path) -> None:
+    """--backend huggingface must call invoke_hf_image, not invoke_nova_canvas."""
+    image_path = tmp_path / "img.jpg"
+    image_path.write_bytes(_make_minimal_png())
+    out_dir = tmp_path / "out"
+
+    sample_packet = _make_sample_packet()
+    png_bytes = _make_minimal_png()
+
+    mock_runner = MagicMock()
+    mock_runner.detect.return_value = _sample_detections()
+    mock_builder = MagicMock()
+    mock_builder.build.return_value = sample_packet
+
+    mock_invoke_hf = MagicMock(return_value=png_bytes)
+
+    with (
+        patch("hfups.demo.run.YoloRunner", return_value=mock_runner),
+        patch("hfups.demo.run.KeyframeBuilder", return_value=mock_builder),
+        patch("hfups.demo.run.load_openimages_v7_boxable_dict"),
+        patch("hfups.demo.run.default_openimages_v7_dict_path"),
+        patch("hfups.demo.run.build_nova_prompt", return_value="test prompt"),
+        patch("hfups.demo.run.ClassMapper"),
+        patch("hfups.nova.hf_client.invoke_hf_image", mock_invoke_hf),
+    ):
+        demo_run.main([
+            "--image", str(image_path),
+            "--nova",
+            "--backend", "huggingface",
+            "--out", str(out_dir),
+        ])
+
+    assert (out_dir / "recon.png").exists()

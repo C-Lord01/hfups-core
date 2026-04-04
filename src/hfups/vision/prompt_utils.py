@@ -82,8 +82,25 @@ def conf_to_pct(conf: int) -> str:
     return f"{pct}%"
 
 
+_X_PHRASES = {
+    "left": "left side of the frame",
+    "center": "center of the frame",
+    "right": "right side of the frame",
+}
+_Y_PHRASES = {
+    "top": "upper",
+    "middle": "mid",
+    "bottom": "lower",
+}
+
+
 def grid_to_bucket_phrase(cx: int, cy: int) -> str:
     """
-    Return coarse position phrase without explicit grid coordinates.
+    Return a natural language position phrase suitable for image generation prompts.
+
+    Examples: "upper left side of the frame", "mid center of the frame",
+    "lower right side of the frame".
     """
-    return f"{_bucket_y(cy)}-{_bucket_x(cx)}"
+    x = _bucket_x(cx)
+    y = _bucket_y(cy)
+    return f"{_Y_PHRASES[y]} {_X_PHRASES[x]}"

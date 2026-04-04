@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import warnings
 from typing import Literal
 
 from hfups.vision.captioner import generate_caption
 from hfups.vision.keyframe_packet import KeyframePacket
 from hfups.vision.openimages_dict import OpenImagesDict
-from hfups.vision.prompt_utils import conf_to_pct, dxdy_to_direction, grid_to_phrase, size_to_word
+from hfups.vision.prompt_utils import dxdy_to_direction, grid_to_bucket_phrase, size_to_word
 
-TemplateStyle = Literal["concise", "descriptive", "disaster_response", "cinematic"]
+TemplateStyle = Literal["concise", "descriptive", "disaster_response", "cinematic", "ups"]
 
 _HAZARD_TERMS = (
     "fire",
@@ -133,9 +134,8 @@ def _descriptive_template(
     for item in _objects_for_prompt(packet, openimages_dict):
         obj = item["obj"]
         name = str(item["name"])
-        object_lines.append(
-            f"A {name.lower()} is in the {grid_to_phrase(obj.cx, obj.cy)} with confidence {conf_to_pct(obj.confidence)}."
-        )
+        position = grid_to_bucket_phrase(obj.cx, obj.cy)
+        object_lines.append(f"A {name.lower()} is in the {position}.")
 
     motion = _motion_sentence(packet, openimages_dict, deltas)
     parts = [opener, *object_lines]
@@ -156,26 +156,26 @@ def _disaster_response_template(
     person_items = [item for item in items if bool(item["person"])]
     vehicle_items = [item for item in items if bool(item["vehicle"])]
 
-    opener = "URGENT: possible incident requiring rapid situational awareness."
+    opener = "Possible incident requiring rapid situational awareness."
 
     facts: list[str] = []
     if hazard_items:
         item = hazard_items[0]
         obj = item["obj"]
         facts.append(
-            f"Hazard observed: {str(item['name']).lower()} at {grid_to_phrase(obj.cx, obj.cy)}."
+            f"Hazard observed: {str(item['name']).lower()} in the {grid_to_bucket_phrase(obj.cx, obj.cy)}."
         )
     if vehicle_items:
         item = vehicle_items[0]
         obj = item["obj"]
         facts.append(
-            f"Possible blocked road near a {str(item['name']).lower()} at {grid_to_phrase(obj.cx, obj.cy)}."
+            f"Possible blocked road near a {str(item['name']).lower()} in the {grid_to_bucket_phrase(obj.cx, obj.cy)}."
         )
     if person_items:
         item = person_items[0]
         obj = item["obj"]
         facts.append(
-            f"At least one person visible at {grid_to_phrase(obj.cx, obj.cy)}; possible injuries."
+            f"At least one person visible in the {grid_to_bucket_phrase(obj.cx, obj.cy)}; possible injuries."
         )
 
     motion = _motion_sentence(packet, openimages_dict, deltas)
@@ -211,9 +211,8 @@ def _cinematic_template(
     for item in items:
         obj = item["obj"]
         name = str(item["name"]).lower()
-        lines.append(
-            f"Frame the {size_to_word(obj.size)} {name} at {grid_to_phrase(obj.cx, obj.cy)} with confidence {conf_to_pct(obj.confidence)}."
-        )
+        position = grid_to_bucket_phrase(obj.cx, obj.cy)
+        lines.append(f"Frame the {size_to_word(obj.size)} {name} in the {position}.")
 
     motion = _motion_sentence(packet, openimages_dict, deltas)
     if motion:
@@ -225,25 +224,85 @@ def _cinematic_template(
     return _clip_words(" ".join(lines), max_words=200)
 
 
+def _ups_template(
+    packet: KeyframePacket,
+    openimages_dict: OpenImagesDict,
+    caption: str | None,
+    deltas: list[tuple] | None,
+) -> str:
+    items = _objects_for_prompt(packet, openimages_dict)
+
+    # Layer A — Realism Booster
+    layer_a = (
+        "Ultra-realistic documentary photograph, photojournalism style, "
+        "natural color science, high dynamic range, no CGI"
+    )
+
+    # Layer B — Subject and Scene
+    # Build from detected objects using natural spatial language (no grid coords)
+    subject_parts: list[str] = []
+    for item in items[:6]:  # cap at 6 to avoid token overflow
+        obj = item["obj"]
+        name = str(item["name"]).lower()
+        position = grid_to_bucket_phrase(obj.cx, obj.cy)
+        size = size_to_word(obj.size)
+        subject_parts.append(f"a {size} {name} in the {position}")
+
+    if subject_parts:
+        layer_b = "Scene showing: " + ", ".join(subject_parts) + "."
+    else:
+        layer_b = caption or "A disaster scene."
+
+    # Layer C — Camera and Lighting
+    layer_c = (
+        "Shot on a full-frame DSLR, 24-70mm lens, f/4, natural available light, "
+        "wide establishing shot"
+    )
+
+    # Layer D — Imperfections
+    layer_d = (
+        "Subtle motion blur, atmospheric haze, dust particles, "
+        "realistic shadows, minor lens distortion"
+    )
+
+    parts = [layer_a + ".", layer_b, layer_c + ".", layer_d + "."]
+    motion = _motion_sentence(packet, openimages_dict, deltas)
+    if motion:
+        parts.insert(2, motion)
+
+    return _clip_words(" ".join(parts), max_words=200)
+
+
 def build_nova_prompt(
     packet: KeyframePacket,
     openimages_dict: OpenImagesDict,
     caption: str | None = None,
     deltas: list[tuple] | None = None,
-    template: TemplateStyle = "descriptive",
+    template: TemplateStyle = "ups",
     caption_parsed: dict | None = None,
 ) -> str:
     """
-    Build a deterministic Nova Canvas-ready prompt from semantic packet content.
+    Build a deterministic image-generation-ready prompt from semantic packet content.
+
+    The default template is "ups" (Universal Prompt Structure), which produces
+    photorealistic photography briefs suitable for FLUX.1 and other diffusion models.
+    "disaster_response" is retained for backward compatibility but is deprecated.
     """
+    if template == "ups":
+        return _ups_template(packet, openimages_dict, caption, deltas)
     if template == "concise":
         return _concise_template(packet, openimages_dict, caption, deltas)
     if template == "descriptive":
         return _descriptive_template(packet, openimages_dict, caption, deltas)
     if template == "disaster_response":
+        warnings.warn(
+            "Template 'disaster_response' is deprecated; use 'ups' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return _disaster_response_template(packet, openimages_dict, caption, deltas, caption_parsed)
     if template == "cinematic":
         return _cinematic_template(packet, openimages_dict, caption, deltas)
     raise ValueError(
-        "template must be one of: concise, descriptive, disaster_response, cinematic"
+        "template must be one of: concise, descriptive, disaster_response, cinematic, ups"
     )
