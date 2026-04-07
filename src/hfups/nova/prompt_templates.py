@@ -241,7 +241,10 @@ def _ups_template(
     # Layer B — Subject and Scene
     # Build from detected objects using natural spatial language (no grid coords)
     subject_parts: list[str] = []
-    for item in items[:6]:  # cap at 6 to avoid token overflow
+    # TODO: The encoding layer supports up to 12 objects, but the prompt is capped at 6
+    # here to avoid token overflow in FLUX.1-schnell. Revisit when a smarter truncation
+    # strategy is implemented (e.g. priority-ranked by confidence or scene relevance).
+    for item in items[:6]:
         obj = item["obj"]
         name = str(item["name"]).lower()
         position = grid_to_bucket_phrase(obj.cx, obj.cy)

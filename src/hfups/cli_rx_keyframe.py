@@ -13,7 +13,8 @@ from hfups.integrations.tx_rx_keyframe import (
     build_ack_payload,
     unwrap_semantic_payload,
 )
-from hfups.nova.prompt_builder import apply_delta_packet, build_nova_prompt
+from hfups.nova.prompt_builder import apply_delta_packet
+from hfups.nova.prompt_templates import build_nova_prompt
 from hfups.transport.semantic_transport import ReceivedFrame
 from hfups.transport.tcp_transport import TcpServerTransport
 from hfups.vision.delta_packet import DeltaPacket
@@ -197,7 +198,11 @@ def main(argv: list[str] | None = None) -> int:
                     continue
 
                 current_keyframe = apply_delta_packet(current_keyframe, delta)
-                prompt = build_nova_prompt(current_keyframe, openimages, delta_packet=delta)
+                prompt = build_nova_prompt(
+                    current_keyframe,
+                    openimages,
+                    deltas=[(e.track_id, e.dx, e.dy) for e in delta.entries],
+                )
                 print(f"RX[{idx}] Delta ({len(body)}B) entries={len(delta.entries)}")
                 print(f"Prompt: {prompt}")
                 prompts_out.append(prompt)
