@@ -224,6 +224,38 @@ def _cinematic_template(
     return _clip_words(" ".join(lines), max_words=200)
 
 
+def infer_scene_caption(detected_classes: list[str]) -> str:
+    """Infer a scene context string from detected object class names.
+
+    Fully deterministic — no external calls. Returns empty string if no
+    rule matches (caller should treat empty string as no caption).
+
+    Priority order: first matching rule wins.
+    """
+    cls = {c.lower() for c in detected_classes}
+
+    if "flood" in cls or "flooded_area" in cls:
+        return (
+            "urban flooding emergency, vehicles submerged in floodwater, "
+            "civilian distress"
+        )
+    if "fire" in cls and "damaged_building" in cls:
+        return "structure fire with building damage, active emergency"
+    if "fire" in cls:
+        return "active fire emergency"
+    if "smoke" in cls and "damaged_building" in cls:
+        return "post-incident scene with structural damage and smoke"
+    if "smoke" in cls:
+        return "smoke present, possible fire or explosion nearby"
+    if "accident_vehicle" in cls:
+        return "vehicle accident scene, emergency response required"
+    if "damaged_building" in cls:
+        return "structural damage to buildings, disaster aftermath"
+    if "debris" in cls:
+        return "debris field, impact or storm damage"
+    return ""
+
+
 def _ups_template(
     packet: KeyframePacket,
     openimages_dict: OpenImagesDict,
@@ -231,6 +263,14 @@ def _ups_template(
     deltas: list[tuple] | None,
 ) -> str:
     items = _objects_for_prompt(packet, openimages_dict)
+
+    # Infer scene context from detected classes if no explicit caption given
+    detected_class_names = [str(item["name"]).lower() for item in items]
+    effective_caption = caption or infer_scene_caption(detected_class_names) or None
+
+    print(f"[DEBUG _ups_template] detected_class_names: {detected_class_names}")
+    print(f"[DEBUG _ups_template] infer_scene_caption result: {repr(infer_scene_caption(detected_class_names))}")
+    print(f"[DEBUG _ups_template] effective_caption: {repr(effective_caption)}")
 
     # Layer A — Realism Booster
     layer_a = (
@@ -252,9 +292,13 @@ def _ups_template(
         subject_parts.append(f"a {size} {name} in the {position}")
 
     if subject_parts:
-        layer_b = "Scene showing: " + ", ".join(subject_parts) + "."
+        objects_desc = ", ".join(subject_parts)
+        if effective_caption:
+            layer_b = f"Scene showing: {effective_caption.strip().rstrip('.')}. Additionally: {objects_desc}."
+        else:
+            layer_b = "Scene showing: " + objects_desc + "."
     else:
-        layer_b = caption or "A disaster scene."
+        layer_b = ("Scene showing: " + effective_caption.strip().rstrip(".") + ".") if effective_caption else "A disaster scene."
 
     # Layer C — Camera and Lighting
     layer_c = (

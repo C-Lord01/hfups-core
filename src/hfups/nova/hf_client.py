@@ -37,7 +37,7 @@ def invoke_hf_image(
             "requests is not installed. Install with: pip install requests"
         ) from exc
 
-    api_url = f"https://api-inference.huggingface.co/models/{model}"
+    api_url = f"https://router.huggingface.co/hf-inference/models/{model}"
     headers = {"Authorization": f"Bearer {resolved_token}"}
     payload = {
         "inputs": prompt,

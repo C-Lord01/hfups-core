@@ -22,6 +22,11 @@ def _build_parser() -> argparse.ArgumentParser:
         description="HFUPS demo runner: detect, encode, optionally generate image via Nova Canvas"
     )
     parser.add_argument("--image", required=True, help="Path to input image file")
+    parser.add_argument(
+        "--model",
+        default="models/yolov8n.pt",
+        help="Path to YOLO weights file (default: models/yolov8n.pt)",
+    )
     parser.add_argument("--nova", action="store_true", help="Invoke Nova Canvas to generate image")
     parser.add_argument(
         "--template",
@@ -71,7 +76,7 @@ def main(argv: list[str] | None = None) -> None:
     image_size_kb = image_path.stat().st_size / 1024.0
 
     # Step b: YOLO detection
-    runner = YoloRunner("models/yolov8n.pt")
+    runner = YoloRunner(args.model)
     detections = runner.detect(image_path, conf=args.conf)
 
     # Step c: Build KeyframePacket
@@ -102,6 +107,7 @@ def main(argv: list[str] | None = None) -> None:
     caption_str: str | None = args.caption or None
 
     # Step g: Build Nova prompt
+    print(f"[DEBUG run.py] caption passed to build_nova_prompt: {repr(caption_str)}")
     prompt = build_nova_prompt(
         packet,
         openimages_dict,
