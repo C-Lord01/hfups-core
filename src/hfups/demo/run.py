@@ -107,7 +107,6 @@ def main(argv: list[str] | None = None) -> None:
     caption_str: str | None = args.caption or None
 
     # Step g: Build Nova prompt
-    print(f"[DEBUG run.py] caption passed to build_nova_prompt: {repr(caption_str)}")
     prompt = build_nova_prompt(
         packet,
         openimages_dict,

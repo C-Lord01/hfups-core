@@ -268,10 +268,6 @@ def _ups_template(
     detected_class_names = [str(item["name"]).lower() for item in items]
     effective_caption = caption or infer_scene_caption(detected_class_names) or None
 
-    print(f"[DEBUG _ups_template] detected_class_names: {detected_class_names}")
-    print(f"[DEBUG _ups_template] infer_scene_caption result: {repr(infer_scene_caption(detected_class_names))}")
-    print(f"[DEBUG _ups_template] effective_caption: {repr(effective_caption)}")
-
     # Layer A — Realism Booster
     layer_a = (
         "Ultra-realistic documentary photograph, photojournalism style, "
