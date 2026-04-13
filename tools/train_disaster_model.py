@@ -49,7 +49,7 @@ TRAIN_ARGS = dict(
     data=str(DATA_YAML),
     epochs=50,
     imgsz=640,
-    batch=16,
+    batch=8,
     device="0",
     project="disaster_detection",
     name="v2",
@@ -193,11 +193,61 @@ class WeightedDetectionTrainer(DetectionTrainer):
 
 
 # ---------------------------------------------------------------------------
+# Label cleaning — remove segment annotations (>5 fields per line)
+# ---------------------------------------------------------------------------
+
+def clean_segment_labels(labels_dir: Path) -> tuple[int, int]:
+    """Remove segment-format lines (>5 fields) from all label .txt files.
+
+    YOLO box format: class cx cy w h  (exactly 5 fields)
+    Segment format:  class x1 y1 x2 y2 ... (more than 5 fields)
+
+    Returns (files_modified, lines_removed).
+    """
+    files_modified = 0
+    lines_removed = 0
+
+    for lbl_file in labels_dir.iterdir():
+        if lbl_file.suffix != ".txt":
+            continue
+        original = lbl_file.read_text(encoding="utf-8")
+        kept: list[str] = []
+        removed = 0
+        for line in original.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if len(stripped.split()) == 5:
+                kept.append(stripped)
+            else:
+                removed += 1
+        if removed:
+            lbl_file.write_text(
+                "\n".join(kept) + ("\n" if kept else ""),
+                encoding="utf-8",
+            )
+            files_modified += 1
+            lines_removed += removed
+
+    return files_modified, lines_removed
+
+
+# ---------------------------------------------------------------------------
 # Training entry point
 # ---------------------------------------------------------------------------
 
 def train() -> Path:
     """Run training and return path to best.pt."""
+    # Clean segment annotations from train and valid label dirs
+    flood_v2 = DATA_YAML.parent
+    total_files = 0
+    total_lines = 0
+    for split in ("train", "valid"):
+        f, l = clean_segment_labels(flood_v2 / split / "labels")
+        total_files += f
+        total_lines += l
+    print(f"Label cleaning: {total_files} files modified, {total_lines} segment lines removed")
+
     model = YOLO("yolov8s.pt")
 
     print("Starting fine-tune on flood_v2 (15-class vocabulary)...")
