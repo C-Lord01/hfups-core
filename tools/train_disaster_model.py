@@ -29,11 +29,12 @@ from ultralytics.utils.loss import v8DetectionLoss
 # GPU check — must run on GPU
 # ---------------------------------------------------------------------------
 
-if not torch.cuda.is_available():
-    print("ERROR: CUDA not available. Training must run on GPU.")
-    print("Run: nvidia-smi to verify GPU is accessible.")
-    sys.exit(1)
-print(f"GPU confirmed: {torch.cuda.get_device_name(0)}")
+if __name__ == "__main__":
+    if not torch.cuda.is_available():
+        print("ERROR: CUDA not available. Training must run on GPU.")
+        print("Run: nvidia-smi to verify GPU is accessible.")
+        sys.exit(1)
+    print(f"GPU confirmed: {torch.cuda.get_device_name(0)}")
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -51,6 +52,8 @@ TRAIN_ARGS = dict(
     imgsz=640,
     batch=8,
     device="0",
+    workers=2,
+    noval=False,
     project="disaster_detection",
     name="v2",
     exist_ok=True,
