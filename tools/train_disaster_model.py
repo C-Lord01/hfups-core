@@ -1,4 +1,4 @@
-"""Fine-tune YOLOv8s on the merged disaster dataset.
+"""Fine-tune YOLOv8s on flood_v2 — 15-class disaster vocabulary (v2).
 
 Class weights are applied to the BCE classification loss via a custom
 DetectionTrainer subclass. The standard v8DetectionLoss computes:
@@ -29,34 +29,66 @@ from ultralytics.utils.loss import v8DetectionLoss
 # ---------------------------------------------------------------------------
 
 DATA_YAML = Path(
-    "C:/Users/Chris/OneDrive/Documents/Hackerthons/HFUPS/Datasets/merged/data.yaml"
+    "C:/Users/Chris/OneDrive/Documents/Hackerthons/HFUPS/Datasets/flood_v2/data.yaml"
 )
 MODELS_DIR = Path("C:/Users/Chris/OneDrive/Documents/Hackerthons/HFUPS/HFUPS Repo/models")
-OUTPUT_WEIGHTS = MODELS_DIR / "yolov8s_disaster.pt"
+OUTPUT_WEIGHTS = MODELS_DIR / "yolov8s_disaster_v2.pt"
+
+import torch as _torch
+_DEVICE = 0 if _torch.cuda.is_available() else "cpu"
+del _torch
 
 TRAIN_ARGS = dict(
     data=str(DATA_YAML),
     epochs=50,
     imgsz=640,
-    batch=16,
-    device=0,
+    batch=16 if _DEVICE != "cpu" else 8,
+    device=_DEVICE,
     project="disaster_detection",
-    name="v1",
+    name="v2",
     exist_ok=False,
     verbose=True,
 )
 
-# Per-class weights: index = class id
-# 0:flood, 1:flooded_area, 2:car, 3:damaged_building, 4:debris,
-# 5:fire, 6:smoke, 7:accident_vehicle, 8:person
-CLASS_NAMES = [
-    "flood", "flooded_area", "car", "damaged_building", "debris",
-    "fire", "smoke", "accident_vehicle", "person",
-]
+# 15-class vocabulary (class 11 utility_pole and 16 rescue_boat dropped;
+# class 12 carpark kept at original index for label file compatibility)
+CLASS_NAMES = {
+    0:  "flood",
+    1:  "flooded_area",
+    2:  "flooded_road",
+    3:  "flooded_bridge",
+    4:  "flooded_carpark",
+    5:  "submerged_car",
+    6:  "car",
+    7:  "person",
+    8:  "person_on_vehicle",
+    9:  "person_in_water",
+    10: "residential_building",
+    12: "carpark",
+    13: "ocean",
+    14: "waves",
+    15: "debris_floating",
+}
+
+# Classes with zero annotations (will not be trained — flag as NOT_TRAINED in report)
+MISSING_CLASSES = {1, 5, 9, 12, 13, 14, 15}
+
 CLASS_WEIGHTS = {
-    0: 3.0,  # flood      — thin class
-    1: 3.0,  # flooded_area — thin class
-    4: 3.0,  # debris      — thinnest class
+    0:  2.0,  # flood           — 1,040 annotations
+    1:  4.0,  # flooded_area    — MISSING
+    2:  1.0,  # flooded_road    — 12,371 ok
+    3:  1.5,  # flooded_bridge  — 2,601 ok
+    4:  3.0,  # flooded_carpark — 17 SPARSE
+    5:  4.0,  # submerged_car   — MISSING
+    6:  1.0,  # car             — 9,780 ok
+    7:  1.0,  # person          — 24,549 ok
+    8:  1.5,  # person_on_vehicle — 1,881 ok
+    9:  4.0,  # person_in_water — MISSING
+    10: 1.0,  # residential_building — 14,038 ok
+    12: 4.0,  # carpark         — MISSING
+    13: 4.0,  # ocean           — MISSING
+    14: 4.0,  # waves           — MISSING
+    15: 4.0,  # debris_floating — MISSING
 }
 
 # ---------------------------------------------------------------------------
@@ -111,7 +143,7 @@ class _WeightedCriterionFactory:
         weighted_ids = [(i, float(wt)) for i, wt in enumerate(w.tolist()) if wt != 1.0]
         print(
             "[WeightedTrainer] criterion.bce patched — class weights: "
-            + ", ".join(f"{CLASS_NAMES[i]}({i})={wt:.1f}" for i, wt in weighted_ids)
+            + ", ".join(f"{CLASS_NAMES.get(i, str(i))}({i})={wt:.1f}" for i, wt in weighted_ids)
         )
         return criterion
 
@@ -161,12 +193,13 @@ def train() -> Path:
     """Run training and return path to best.pt."""
     model = YOLO("yolov8s.pt")
 
-    print("Starting fine-tune on merged disaster dataset...")
+    print("Starting fine-tune on flood_v2 (15-class vocabulary)...")
     print(f"  Data:    {DATA_YAML}")
     print(f"  Epochs:  {TRAIN_ARGS['epochs']}")
     print(f"  Imgsz:   {TRAIN_ARGS['imgsz']}")
     print(f"  Batch:   {TRAIN_ARGS['batch']}")
     print(f"  Device:  {TRAIN_ARGS['device']}")
+    print(f"  Output:  {OUTPUT_WEIGHTS}")
     print(f"  Weights: {CLASS_WEIGHTS}")
 
     model.train(
@@ -174,7 +207,7 @@ def train() -> Path:
         **TRAIN_ARGS,
     )
 
-    best_pt = Path("disaster_detection/v1/weights/best.pt")
+    best_pt = Path("disaster_detection/v2/weights/best.pt")
     if not best_pt.exists():
         raise FileNotFoundError(f"Expected best.pt at {best_pt.resolve()}")
 
@@ -202,29 +235,40 @@ def validate(weights_path: Path) -> None:
     )
 
     map50_overall = float(results.box.map50)
-    maps_per_class = results.box.maps  # list of per-class mAP50-95; use ap_class_index
 
     # Ultralytics stores per-class AP50 in results.box.ap50
     ap50_per_class = results.box.ap50  # shape (nc,) or list
 
     print(f"\nmAP50 overall: {map50_overall:.4f}")
-    print(f"\nPer-class mAP50:")
+    print(f"\n{'ID':<5} {'Class':<24} {'mAP50':>7}  Status")
+    print("-" * 48)
+
     flag_threshold = 0.4
-    flagged: list[str] = []
-    for cls_id, cls_name in enumerate(CLASS_NAMES):
+    weak: list[str] = []
+    not_trained: list[str] = []
+
+    for cls_id in sorted(CLASS_NAMES.keys()):
+        cls_name = CLASS_NAMES[cls_id]
+        if cls_id in MISSING_CLASSES:
+            print(f"  {cls_id:<4} {cls_name:<24} {'—':>7}  NOT_TRAINED")
+            not_trained.append(cls_name)
+            continue
         try:
             ap = float(ap50_per_class[cls_id])
         except (IndexError, TypeError):
             ap = float("nan")
-        flag = "  <-- BELOW 0.4" if ap < flag_threshold else ""
-        print(f"  {cls_id}  {cls_name:<20}: {ap:.4f}{flag}")
+        flag = "WEAK" if ap < flag_threshold else "ok"
+        print(f"  {cls_id:<4} {cls_name:<24} {ap:>7.4f}  {flag}")
         if ap < flag_threshold:
-            flagged.append(cls_name)
+            weak.append(cls_name)
 
-    if flagged:
-        print(f"\nFlagged classes (mAP50 < {flag_threshold}): {flagged}")
+    print()
+    if weak:
+        print(f"WEAK classes (mAP50 < {flag_threshold}): {weak}")
     else:
-        print(f"\nAll classes above mAP50 {flag_threshold} threshold.")
+        print(f"All trained classes above mAP50 {flag_threshold} threshold.")
+    if not_trained:
+        print(f"NOT_TRAINED (no annotations): {not_trained}")
 
 
 # ---------------------------------------------------------------------------
