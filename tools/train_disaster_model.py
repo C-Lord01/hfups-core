@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 import torch
@@ -23,6 +24,16 @@ import torch.nn as nn
 from ultralytics import YOLO
 from ultralytics.models.yolo.detect.train import DetectionTrainer
 from ultralytics.utils.loss import v8DetectionLoss
+
+# ---------------------------------------------------------------------------
+# GPU check — must run on GPU
+# ---------------------------------------------------------------------------
+
+if not torch.cuda.is_available():
+    print("ERROR: CUDA not available. Training must run on GPU.")
+    print("Run: nvidia-smi to verify GPU is accessible.")
+    sys.exit(1)
+print(f"GPU confirmed: {torch.cuda.get_device_name(0)}")
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -34,24 +45,20 @@ DATA_YAML = Path(
 MODELS_DIR = Path("C:/Users/Chris/OneDrive/Documents/Hackerthons/HFUPS/HFUPS Repo/models")
 OUTPUT_WEIGHTS = MODELS_DIR / "yolov8s_disaster_v2.pt"
 
-import torch as _torch
-_DEVICE = 0 if _torch.cuda.is_available() else "cpu"
-del _torch
-
 TRAIN_ARGS = dict(
     data=str(DATA_YAML),
     epochs=50,
     imgsz=640,
-    batch=16 if _DEVICE != "cpu" else 8,
-    device=_DEVICE,
+    batch=16,
+    device="0",
     project="disaster_detection",
     name="v2",
-    exist_ok=False,
+    exist_ok=True,
     verbose=True,
 )
 
-# 15-class vocabulary (class 11 utility_pole and 16 rescue_boat dropped;
-# class 12 carpark kept at original index for label file compatibility)
+# 15-class sequential vocabulary (after reindex_labels.py remapping)
+# carpark=11, ocean=12, waves=13, debris_floating=14
 CLASS_NAMES = {
     0:  "flood",
     1:  "flooded_area",
@@ -64,31 +71,31 @@ CLASS_NAMES = {
     8:  "person_on_vehicle",
     9:  "person_in_water",
     10: "residential_building",
-    12: "carpark",
-    13: "ocean",
-    14: "waves",
-    15: "debris_floating",
+    11: "carpark",
+    12: "ocean",
+    13: "waves",
+    14: "debris_floating",
 }
 
-# Classes with zero annotations (will not be trained — flag as NOT_TRAINED in report)
-MISSING_CLASSES = {1, 5, 9, 12, 13, 14, 15}
+# Classes with zero annotations — flagged NOT_TRAINED in validation report
+MISSING_CLASSES = {1, 5, 9, 11, 12, 13, 14}
 
 CLASS_WEIGHTS = {
-    0:  2.0,  # flood           — 1,040 annotations
-    1:  4.0,  # flooded_area    — MISSING
-    2:  1.0,  # flooded_road    — 12,371 ok
-    3:  1.5,  # flooded_bridge  — 2,601 ok
-    4:  3.0,  # flooded_carpark — 17 SPARSE
-    5:  4.0,  # submerged_car   — MISSING
-    6:  1.0,  # car             — 9,780 ok
-    7:  1.0,  # person          — 24,549 ok
-    8:  1.5,  # person_on_vehicle — 1,881 ok
-    9:  4.0,  # person_in_water — MISSING
+    0:  2.0,  # flood                — 1,040 annotations
+    1:  4.0,  # flooded_area         — MISSING
+    2:  1.0,  # flooded_road         — 12,371 ok
+    3:  1.5,  # flooded_bridge       — 2,601 ok
+    4:  3.0,  # flooded_carpark      — 17 SPARSE
+    5:  4.0,  # submerged_car        — MISSING
+    6:  1.0,  # car                  — 9,780 ok
+    7:  1.0,  # person               — 24,549 ok
+    8:  1.5,  # person_on_vehicle    — 1,881 ok
+    9:  4.0,  # person_in_water      — MISSING
     10: 1.0,  # residential_building — 14,038 ok
-    12: 4.0,  # carpark         — MISSING
-    13: 4.0,  # ocean           — MISSING
-    14: 4.0,  # waves           — MISSING
-    15: 4.0,  # debris_floating — MISSING
+    11: 4.0,  # carpark              — MISSING
+    12: 4.0,  # ocean                — MISSING
+    13: 4.0,  # waves                — MISSING
+    14: 4.0,  # debris_floating      — MISSING
 }
 
 # ---------------------------------------------------------------------------
@@ -230,7 +237,7 @@ def validate(weights_path: Path) -> None:
         data=str(DATA_YAML),
         split="test",
         imgsz=TRAIN_ARGS["imgsz"],
-        device=TRAIN_ARGS["device"],
+        device="0",
         verbose=False,
     )
 
@@ -247,14 +254,15 @@ def validate(weights_path: Path) -> None:
     weak: list[str] = []
     not_trained: list[str] = []
 
-    for cls_id in sorted(CLASS_NAMES.keys()):
+    # CLASS_NAMES keys are now sequential 0-14; ap50_per_class is also 0-indexed
+    for seq_idx, cls_id in enumerate(sorted(CLASS_NAMES.keys())):
         cls_name = CLASS_NAMES[cls_id]
         if cls_id in MISSING_CLASSES:
             print(f"  {cls_id:<4} {cls_name:<24} {'—':>7}  NOT_TRAINED")
             not_trained.append(cls_name)
             continue
         try:
-            ap = float(ap50_per_class[cls_id])
+            ap = float(ap50_per_class[seq_idx])
         except (IndexError, TypeError):
             ap = float("nan")
         flag = "WEAK" if ap < flag_threshold else "ok"
